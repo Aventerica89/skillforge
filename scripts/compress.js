@@ -2,71 +2,14 @@
 /**
  * SkillForge Compress — Replace SKILL.md files with lightweight stubs
  *
- * Usage: node compress.js [plugin-name]
- *   plugin-name: optional, compress only this plugin (default: all)
- *
- * Backs up full SKILL.md to ~/.claude/skills-full/{plugin}/{skill}.md
- * Replaces with stub: short description + redirect to backup
+ * Usage: node compress.js [plugin-name] [--all]
+ *   plugin-name: optional, compress only this plugin
+ *   --all: compress all plugins including disabled (default: enabled only)
  */
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-
-const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
-const SKILLS_FULL = path.join(os.homedir(), '.claude', 'skills-full');
-const STUB_MARKER = 'SKILLFORGE_COMPRESSED';
-
-function parseFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-
-  const fm = {};
-  for (const line of match[1].split('\n')) {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const val = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '');
-    fm[key] = val;
-  }
-  return fm;
-}
-
-function truncateDescription(desc, maxWords = 10) {
-  if (!desc) return '';
-  return desc.split(/\s+/).slice(0, maxWords).join(' ');
-}
-
-function isAlreadyCompressed(content) {
-  return content.includes(STUB_MARKER);
-}
-
-function findSkillDirs(pluginFilter) {
-  const results = [];
-
-  if (!fs.existsSync(PLUGINS_CACHE)) return results;
-
-  for (const marketplace of fs.readdirSync(PLUGINS_CACHE)) {
-    const marketDir = path.join(PLUGINS_CACHE, marketplace);
-    if (!fs.statSync(marketDir).isDirectory()) continue;
-    if (marketplace.startsWith('temp_')) continue;
-
-    for (const plugin of fs.readdirSync(marketDir)) {
-      if (pluginFilter && plugin !== pluginFilter) continue;
-      const pluginDir = path.join(marketDir, plugin);
-      if (!fs.statSync(pluginDir).isDirectory()) continue;
-
-      for (const version of fs.readdirSync(pluginDir)) {
-        const skillsDir = path.join(pluginDir, version, 'skills');
-        if (fs.existsSync(skillsDir) && fs.statSync(skillsDir).isDirectory()) {
-          results.push({ marketplace, plugin, version, skillsDir });
-        }
-      }
-    }
-  }
-
-  return results;
-}
+const { SKILLS_FULL, STUB_MARKER, parseFrontmatter, smartTruncate, findSkillDirs, isAlreadyCompressed } = require('./shared');
 
 function compressSkill(skillFile, plugin, skillName) {
   const content = fs.readFileSync(skillFile, 'utf-8');
@@ -81,15 +24,13 @@ function compressSkill(skillFile, plugin, skillName) {
   }
 
   const name = fm.name || skillName;
-  const shortDesc = truncateDescription(fm.description);
+  const shortDesc = smartTruncate(fm.description);
 
-  // Backup full content
   const backupDir = path.join(SKILLS_FULL, plugin);
   fs.mkdirSync(backupDir, { recursive: true });
   const backupFile = path.join(backupDir, `${name}.md`);
   fs.copyFileSync(skillFile, backupFile);
 
-  // Write stub
   const stub = `---
 name: ${name}
 description: ${shortDesc}
@@ -115,13 +56,16 @@ ${backupFile}
 }
 
 function main() {
-  const pluginFilter = process.argv[2] || null;
-  const skillDirs = findSkillDirs(pluginFilter);
+  const args = process.argv.slice(2);
+  const allFlag = args.includes('--all');
+  const pluginFilter = args.find(a => !a.startsWith('--')) || null;
+
+  const skillDirs = findSkillDirs(pluginFilter, { enabledOnly: !allFlag });
 
   if (skillDirs.length === 0) {
     console.log(pluginFilter
       ? `No skills found for plugin "${pluginFilter}".`
-      : 'No plugin skills found.');
+      : 'No plugin skills found. (Use --all to include disabled plugins)');
     process.exit(0);
   }
 

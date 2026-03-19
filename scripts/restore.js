@@ -2,59 +2,14 @@
 /**
  * SkillForge Restore — Reverse compression, restore original SKILL.md files
  *
- * Usage: node restore.js [plugin-name]
- *   plugin-name: optional, restore only this plugin (default: all)
+ * Usage: node restore.js [plugin-name] [--all]
+ *   plugin-name: optional, restore only this plugin
+ *   --all: include disabled plugins (default: enabled only)
  */
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-
-const PLUGINS_CACHE = path.join(os.homedir(), '.claude', 'plugins', 'cache');
-const SKILLS_FULL = path.join(os.homedir(), '.claude', 'skills-full');
-const STUB_MARKER = 'SKILLFORGE_COMPRESSED';
-
-function parseFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-
-  const fm = {};
-  for (const line of match[1].split('\n')) {
-    const colonIdx = line.indexOf(':');
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    const val = line.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '');
-    fm[key] = val;
-  }
-  return fm;
-}
-
-function findSkillDirs(pluginFilter) {
-  const results = [];
-
-  if (!fs.existsSync(PLUGINS_CACHE)) return results;
-
-  for (const marketplace of fs.readdirSync(PLUGINS_CACHE)) {
-    const marketDir = path.join(PLUGINS_CACHE, marketplace);
-    if (!fs.statSync(marketDir).isDirectory()) continue;
-    if (marketplace.startsWith('temp_')) continue;
-
-    for (const plugin of fs.readdirSync(marketDir)) {
-      if (pluginFilter && plugin !== pluginFilter) continue;
-      const pluginDir = path.join(marketDir, plugin);
-      if (!fs.statSync(pluginDir).isDirectory()) continue;
-
-      for (const version of fs.readdirSync(pluginDir)) {
-        const skillsDir = path.join(pluginDir, version, 'skills');
-        if (fs.existsSync(skillsDir) && fs.statSync(skillsDir).isDirectory()) {
-          results.push({ marketplace, plugin, version, skillsDir });
-        }
-      }
-    }
-  }
-
-  return results;
-}
+const { SKILLS_FULL, STUB_MARKER, parseFrontmatter, findSkillDirs } = require('./shared');
 
 function restoreSkill(skillFile, plugin, skillName) {
   const content = fs.readFileSync(skillFile, 'utf-8');
@@ -78,8 +33,11 @@ function restoreSkill(skillFile, plugin, skillName) {
 }
 
 function main() {
-  const pluginFilter = process.argv[2] || null;
-  const skillDirs = findSkillDirs(pluginFilter);
+  const args = process.argv.slice(2);
+  const allFlag = args.includes('--all');
+  const pluginFilter = args.find(a => !a.startsWith('--')) || null;
+
+  const skillDirs = findSkillDirs(pluginFilter, { enabledOnly: !allFlag });
 
   if (skillDirs.length === 0) {
     console.log('No plugin skills found.');
