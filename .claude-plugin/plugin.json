@@ -1,0 +1,11 @@
+{
+  "name": "skillforge",
+  "version": "1.0.0",
+  "description": "Deferred skill loading for Claude Code — compress skills to stubs, load full content on demand. Saves ~88% of per-turn skill token overhead.",
+  "author": {
+    "name": "JB Cloud"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/Aventerica89/skillforge",
+  "keywords": ["skills", "context", "optimization", "tokens", "compression"]
+}
